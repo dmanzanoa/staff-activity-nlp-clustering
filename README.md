@@ -59,4 +59,4 @@ This will read the specified column, cluster the descriptions into five groups, 
 
 ## Ethical considerations
 
-This project showcases how unsupervised learning on staff activity data can lead to evidence-based policy decisions. When applying such techniques in the real world, take care to respect privacy, secure sensitive information, and ensure that clustering outcomes are interpreted and acted upon fairly.
+This project demonstrates how unsupervised learning applied to staff activity data can support evidence-based policy decisions. When implementing these techniques in real-world contexts, it is essential to protect individual privacy, secure sensitive information, and ensure that clustering results are interpreted and used responsibly. The analysis was conducted using confidential staff data from the University of Chile.
