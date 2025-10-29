@@ -290,12 +290,69 @@ def save_cluster_results(texts: Sequence[str], labels: Sequence[int], path: str)
     df = pd.DataFrame({'text': texts, 'cluster': labels})
     df.to_excel(path, index=False)
 
+# === Topic modelling utilities ===
+
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.decomposition import LatentDirichletAllocation
+
+
+
+def topic_model(
+    texts: Sequence[str],
+    n_topics: int = 5,
+    n_words: int = 10,
+    stem: bool = False,
+) -> Tuple[np.ndarray, LatentDirichletAllocation, List[List[str]]]:
+    """Fit a Latent Dirichlet Allocation (LDA) model to a collection of texts.
+
+    Topic modelling provides an alternative view of a corpus by discovering
+    distributions of latent topics rather than discrete clusters.  This
+    function tokenises the input texts, builds a bag‑of‑words matrix
+    using a :class:`CountVectorizer` and fits a
+    :class:`sklearn.decomposition.LatentDirichletAllocation` model.
+
+    Parameters
+    ----------
+    texts : sequence of str
+        A sequence of free‑text documents to analyse.
+    n_topics : int, default 5
+        The number of latent topics to discover.
+    n_words : int, default 10
+        Number of top words to return for each topic.
+    stem : bool, default False
+        Whether to apply stemming during tokenisation.
+
+    Returns
+    -------
+    doc_topic_matrix : ndarray of shape (n_samples, n_topics)
+        Matrix of topic probabilities for each document.
+    model : LatentDirichletAllocation
+        The fitted LDA model.
+    top_words : list of list of str
+        A list of top words for each topic.  ``top_words[i]`` contains the
+        ``n_words`` most probable tokens for topic ``i``.
+    """
+    # Preprocess the text and construct a CountVectorizer
+    preprocessor = SpanishTextPreprocessor(stem=stem)
+    vectoriser = CountVectorizer(tokenizer=preprocessor, stop_words=preprocessor.stop_words)
+    doc_term_matrix = vectoriser.fit_transform(texts)
+    lda = LatentDirichletAllocation(n_components=n_topics, random_state=42)
+    doc_topic_matrix = lda.fit_transform(doc_term_matrix)
+    feature_names = vectoriser.get_feature_names_out()
+    top_words = []
+    for topic_weights in lda.components_:
+        # Get indices of the most significant words for this topic
+        top_indices = topic_weights.argsort()[-n_words:][::-1]
+        top_words.append([feature_names[i] for i in top_indices])
+    return doc_topic_matrix, lda, top_words
+
+
 
 if __name__ == '__main__':  # pragma: no cover
     import argparse
 
     parser = argparse.ArgumentParser(
-        description='Cluster Spanish text descriptions using TF‑IDF and KMeans.'
+        description='Cluster Spanish text descriptions using TF‑IDF/KMeans or perform topic modelling using LDA.'
     )
     parser.add_argument('input_path', help='Path to a CSV or Excel file containing text data.')
     parser.add_argument('--column', default='DESC_FUNC',
@@ -306,23 +363,41 @@ if __name__ == '__main__':  # pragma: no cover
     parser.add_argument('--stem', action='store_true', help='Apply stemming during tokenisation.')
     parser.add_argument('--out', default=None,
                         help='Optional path to save a spreadsheet with cluster labels.')
+    parser.add_argument('--lda-topics', type=int, default=None,
+                        help='If provided, fit an LDA topic model with this number of topics instead of (or in addition to) clustering.')
+    parser.add_argument('--lda-words', type=int, default=10,
+                        help='Number of top words to show for each topic (default: 10).')
     args = parser.parse_args()
 
-    # Load and cluster the texts
+    # Load the descriptions from the specified file
     descriptions = load_texts(args.input_path, args.column)
-    labels, _ = cluster_texts(
-        descriptions,
-        n_clusters=args.clusters,
-        k_range=range(2, 10),
-        plot=args.plot,
-        stem=args.stem,
-    )
-    if args.out:
-        save_cluster_results(descriptions, labels, args.out)
-        print(f'Cluster assignments saved to {args.out}')
-    else:
-        # Print a brief summary
-        summary = pd.Series(labels).value_counts().sort_index()
-        print('Cluster counts:')
-        for k, count in summary.items():
-            print(f'  Cluster {k}: {count} texts')
+
+    # Perform clustering if requested (always unless lda_only is intended)
+    if args.clusters is not None or args.lda_topics is None:
+        labels, _ = cluster_texts(
+            descriptions,
+            n_clusters=args.clusters,
+            k_range=range(2, 10),
+            plot=args.plot,
+            stem=args.stem,
+        )
+        if args.out:
+            save_cluster_results(descriptions, labels, args.out)
+            print(f'Cluster assignments saved to {args.out}')
+        else:
+            summary = pd.Series(labels).value_counts().sort_index()
+            print('Cluster counts:')
+            for k, count in summary.items():
+                print(f'  Cluster {k}: {count} texts')
+
+    # Perform topic modelling with LDA if --lda-topics is supplied
+    if args.lda_topics is not None:
+        print(f"\nFitting LDA model with {args.lda_topics} topics...")
+        doc_topic_matrix, lda_model, top_words = topic_model(
+            descriptions,
+            n_topics=args.lda_topics,
+            n_words=args.lda_words,
+            stem=args.stem,
+        )
+        for idx, words in enumerate(top_words):
+            print(f"Topic {idx}: {', '.join(words)}")
